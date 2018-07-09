@@ -1,0 +1,32 @@
+---
+version: 1
+disable_existing_loggers: False
+formatters:
+    simple:
+        format: "[%(asctime)s] %(levelname)-8s %(message)s"
+    color:
+        class: colorlog.ColoredFormatter
+        format: "[%(asctime)s] %(log_color)s%(levelname)-8s%(reset)s %(message)s"
+        log_colors:
+            DEBUG: "cyan"
+            INFO: "green"
+            WARNING: "yellow"
+            ERROR: "red"
+            CRITICAL: "red,bg_white"
+
+handlers:
+    console:
+        class: cycada.util.TqdmHandler
+        level: INFO
+        formatter: color
+
+    file_handler:
+        class: logging.FileHandler
+        level: INFO
+        formatter: simple
+        encoding: utf8
+
+root:
+    level: INFO
+    handlers: [console, file_handler]
+
