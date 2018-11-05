@@ -41,7 +41,7 @@ def get_orig_size(dataset_name):
     try:
         return sizes[dataset_name]
     except:
-        Exception('Unknown dataset size:', dataset_name)
+        raise Exception('Unknown dataset size:', dataset_name)
 
 def get_transform2(dataset_name, net_transform, downscale):
     "Returns image and label transform to downscale, crop and prepare for net."
