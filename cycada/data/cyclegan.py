@@ -22,7 +22,7 @@ class CycleGANDataset(data.Dataset):
         image_paths = []
         labels = []
         for basename in basenames:
-            image_paths.append(os.path.join(self.root, basename))
+            image_paths.append(basename)
             labels.append(int(basename.split('/')[-1].split('_')[0]))
         return image_paths, labels
 
