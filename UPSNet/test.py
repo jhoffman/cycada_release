@@ -1,4 +1,9 @@
-from upsnet.dataset.json_dataset import JsonDataset
+from upsnet.dataset.json_gta5_dataset import JsonGTA5Dataset
 
-a = JsonDataset('cityscapes', 'data/cityscapes', 'data/cityscapes/annotations/instancesonly_gtFine_val.json')
+import logging
+
+logger = logging
+logging.basicConfig(level=logging.DEBUG)
+
+a = JsonGTA5Dataset('gta5', 'data/gta5/train', 'data/gta5/train/inst.json')
 a.get_roidb(gt=True)

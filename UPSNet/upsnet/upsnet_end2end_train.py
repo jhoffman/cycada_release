@@ -5,7 +5,7 @@
 #
 # Licensed under the Uber Non-Commercial License (the "License");
 # you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at the root directory of this project. 
+# You may obtain a copy of the License at the root directory of this project.
 #
 # See the License for the specific language governing permissions and
 # limitations under the License.
@@ -13,30 +13,38 @@
 # Written by Yuwen Xiong
 # ---------------------------------------------------------------------------
 
-from __future__ import print_function, division
-import os
-import sys
+from __future__ import division, print_function, absolute_import
+
 import logging
-import pprint
-import time
-import numpy as np
+import os
 import pickle
+import pprint
+import sys
+import time
+from collections import deque
+
+import cv2
+import numpy as np
 import torch
+import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.utils.data
-import torch.backends.cudnn as cudnn
-import tensorboardX
-import cv2
 import torch.utils.data.distributed as distributed
+import torch.utils.tensorboard as tensorboardX
+from lib.nn.optimizer import SGD, Adam, clip_grad
+from lib.utils.callback import Speedometer
+from lib.utils.data_parallel import DataParallel
+from lib.utils.logging import create_logger
+from lib.utils.metric import AvgMetric
 
+from upsnet.config.config import config
+from upsnet.config.parse_args import parse_args
+from upsnet.dataset import *
+from upsnet.models import *
 
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from collections import deque
-from upsnet.config.config import config
-from upsnet.config.parse_args import parse_args
-from lib.utils.logging import create_logger
 
 args = parse_args()
 
@@ -55,14 +63,9 @@ if is_master:
                                                              '_'.join(config.dataset.image_set.split('+')),
                                                              time.strftime('%Y-%m-%d-%H-%M')))
 else:
-    final_output_path = os.path.join(config.output_path, os.path.basename(args.cfg).split('.')[0], '{}'.format('_'.join([iset for iset in config.dataset.image_set.split('+')])))
+    final_output_path = os.path.join(config.output_path, os.path.basename(args.cfg).split(
+        '.')[0], '{}'.format('_'.join([iset for iset in config.dataset.image_set.split('+')])))
 
-from upsnet.dataset import *
-from upsnet.models import *
-from lib.utils.callback import Speedometer
-from lib.utils.data_parallel import DataParallel
-from lib.utils.metric import AvgMetric
-from lib.nn.optimizer import SGD, Adam, clip_grad
 
 np.random.seed(235)
 torch.cuda.manual_seed_all(235)
@@ -102,6 +105,7 @@ def adjust_learning_rate(optimizer, iter, config):
     if config.train.lr_schedule == 'poly':
         return lr_poly(config.train.lr, iter, config.train.max_iteration, config.train.warmup_iteration)
 
+
 def upsnet_train():
 
     if is_master:
@@ -112,7 +116,7 @@ def upsnet_train():
 
     # create models
     train_model = eval(config.symbol)().cuda()
-        
+
     # create optimizer
     params_lr = train_model.get_params_lr()
     # we use custom optimizer and pass lr=1 to support different lr for different weights
@@ -122,16 +126,22 @@ def upsnet_train():
     optimizer.zero_grad()
 
     # create data loader
-    train_dataset = eval(config.dataset.dataset)(image_sets=config.dataset.image_set.split('+'), flip=config.train.flip, result_path=final_output_path)
-    val_dataset = eval(config.dataset.dataset)(image_sets=config.dataset.test_image_set.split('+'), flip=False, result_path=final_output_path, phase='val')
+    train_dataset = eval(config.dataset.dataset)(image_sets=config.dataset.image_set.split('+'),
+                                                 flip=config.train.flip, result_path=final_output_path)
+    val_dataset = eval(config.dataset.dataset)(image_sets=config.dataset.test_image_set.split('+'),
+                                               flip=False, result_path=final_output_path, phase='val')
     if config.train.use_horovod:
         train_sampler = distributed.DistributedSampler(train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
         val_sampler = distributed.DistributedSampler(val_dataset, num_replicas=hvd.size(), rank=hvd.rank())
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config.train.batch_size, sampler=train_sampler, num_workers=num_gpus * 4, drop_last=False, collate_fn=train_dataset.collate)
-        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=config.train.batch_size, sampler=val_sampler, num_workers=num_gpus * 4, drop_last=False, collate_fn=val_dataset.collate)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config.train.batch_size,
+                                                   sampler=train_sampler, num_workers=num_gpus * 4, drop_last=False, collate_fn=train_dataset.collate)
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=config.train.batch_size,
+                                                 sampler=val_sampler, num_workers=num_gpus * 4, drop_last=False, collate_fn=val_dataset.collate)
     else:
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config.train.batch_size, shuffle=config.train.shuffle, num_workers=num_gpus * 4 if not config.debug_mode else num_gpus * 4, drop_last=False, collate_fn=train_dataset.collate)
-        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=config.train.batch_size, shuffle=False, num_workers=num_gpus * 4 if not config.debug_mode else num_gpus * 4, drop_last=False, collate_fn=val_dataset.collate)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config.train.batch_size, shuffle=config.train.shuffle,
+                                                   num_workers=num_gpus * 4 if not config.debug_mode else num_gpus * 4, drop_last=False, collate_fn=train_dataset.collate)
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=config.train.batch_size, shuffle=False,
+                                                 num_workers=num_gpus * 4 if not config.debug_mode else num_gpus * 4, drop_last=False, collate_fn=val_dataset.collate)
 
     # preparing
     curr_iter = config.train.begin_iteration
@@ -139,10 +149,10 @@ def upsnet_train():
     metrics = []
     metrics_name = []
     if config.network.has_rpn:
-        metrics.extend([AvgMetric(name='rpn_cls_loss'), AvgMetric(name='rpn_bbox_loss'),])
+        metrics.extend([AvgMetric(name='rpn_cls_loss'), AvgMetric(name='rpn_bbox_loss'), ])
         metrics_name.extend(['rpn_cls_loss', 'rpn_bbox_loss'])
     if config.network.has_rcnn:
-        metrics.extend([AvgMetric(name='rcnn_accuracy'), AvgMetric(name='cls_loss'), AvgMetric(name='bbox_loss'),])
+        metrics.extend([AvgMetric(name='rcnn_accuracy'), AvgMetric(name='cls_loss'), AvgMetric(name='bbox_loss'), ])
         metrics_name.extend(['rcnn_accuracy', 'cls_loss', 'bbox_loss'])
     if config.network.has_mask_head:
         metrics.extend([AvgMetric(name='mask_loss'), ])
@@ -158,8 +168,10 @@ def upsnet_train():
         metrics_name.extend(['panoptic_accuracy', 'panoptic_loss'])
 
     if config.train.resume:
-        train_model.load_state_dict(torch.load(os.path.join(final_output_path, config.model_prefix + str(curr_iter) + '.pth')), resume=True)
-        optimizer.load_state_dict(torch.load(os.path.join(final_output_path, config.model_prefix + str(curr_iter) + '.state.pth')))
+        train_model.load_state_dict(torch.load(os.path.join(
+            final_output_path, config.model_prefix + str(curr_iter) + '.pth')), resume=True)
+        optimizer.load_state_dict(torch.load(os.path.join(
+            final_output_path, config.model_prefix + str(curr_iter) + '.state.pth')))
         if config.train.use_horovod:
             hvd.broadcast_parameters(train_model.state_dict(), root_rank=0)
     else:
@@ -188,7 +200,6 @@ def upsnet_train():
                     train_model.freeze_backbone(config.network.backbone_freeze_at)
                 if config.network.backbone_fix_bn:
                     train_model.resnet_backbone.eval()
-
 
             for inner_iter, batch in enumerate(train_loader):
                 data, label, _ = batch
@@ -231,7 +242,6 @@ def upsnet_train():
                         metric.update(_, _, loss)
                 curr_iter += 1
 
-
                 if curr_iter in config.train.decay_iteration:
                     if is_master:
                         logger.info('decay momentum buffer')
@@ -246,8 +256,10 @@ def upsnet_train():
 
                     if curr_iter % config.train.snapshot_step == 0:
                         logger.info('taking snapshot ...')
-                        torch.save(train_model.state_dict(), os.path.join(final_output_path, config.model_prefix+str(curr_iter)+'.pth'))
-                        torch.save(optimizer.state_dict(), os.path.join(final_output_path, config.model_prefix+str(curr_iter)+'.state.pth'))
+                        torch.save(train_model.state_dict(), os.path.join(
+                            final_output_path, config.model_prefix+str(curr_iter)+'.pth'))
+                        torch.save(optimizer.state_dict(), os.path.join(
+                            final_output_path, config.model_prefix+str(curr_iter)+'.state.pth'))
         else:
             inner_iter = 0
             train_iterator = train_loader.__iter__()
@@ -283,7 +295,7 @@ def upsnet_train():
                     loss = loss + output['panoptic_loss'].mean() * config.train.panoptic_loss_weight
                 loss.backward()
                 optimizer.step(lr)
-                
+
                 losses = []
                 losses.append(loss.item())
                 for l in metrics_name:
@@ -310,11 +322,12 @@ def upsnet_train():
                         for callback in batch_end_callback:
                             callback(curr_iter, metrics)
 
-
                     if curr_iter % config.train.snapshot_step == 0:
                         logger.info('taking snapshot ...')
-                        torch.save(train_model.module.state_dict(), os.path.join(final_output_path, config.model_prefix+str(curr_iter)+'.pth'))
-                        torch.save(optimizer.state_dict(), os.path.join(final_output_path, config.model_prefix+str(curr_iter)+'.state.pth'))
+                        torch.save(train_model.module.state_dict(), os.path.join(
+                            final_output_path, config.model_prefix+str(curr_iter)+'.pth'))
+                        torch.save(optimizer.state_dict(), os.path.join(
+                            final_output_path, config.model_prefix+str(curr_iter)+'.state.pth'))
 
             while True:
                 try:
@@ -366,7 +379,8 @@ def upsnet_train():
 
                     losses = []
                     for l in metrics_name:
-                        losses.append(allreduce_async(output[l].mean(), name=l) if config.train.use_horovod else output[l].mean().item())
+                        losses.append(allreduce_async(output[l].mean(), name=l)
+                                      if config.train.use_horovod else output[l].mean().item())
 
                     for metric, loss in zip(metrics, losses):
                         loss = hvd.synchronize(loss).item() if config.train.use_horovod else loss
@@ -392,12 +406,17 @@ def upsnet_train():
 
     if is_master and config.train.use_horovod:
         logger.info('taking snapshot ...')
-        torch.save(train_model.state_dict(), os.path.join(final_output_path, config.model_prefix + str(curr_iter) + '.pth'))
-        torch.save(optimizer.state_dict(), os.path.join(final_output_path, config.model_prefix + str(curr_iter) + '.state.pth'))
+        torch.save(train_model.state_dict(), os.path.join(
+            final_output_path, config.model_prefix + str(curr_iter) + '.pth'))
+        torch.save(optimizer.state_dict(), os.path.join(final_output_path,
+                                                        config.model_prefix + str(curr_iter) + '.state.pth'))
     elif not config.train.use_horovod:
         logger.info('taking snapshot ...')
-        torch.save(train_model.module.state_dict(), os.path.join(final_output_path, config.model_prefix + str(curr_iter) + '.pth'))
-        torch.save(optimizer.state_dict(), os.path.join(final_output_path, config.model_prefix + str(curr_iter) + '.state.pth'))
+        torch.save(train_model.module.state_dict(), os.path.join(
+            final_output_path, config.model_prefix + str(curr_iter) + '.pth'))
+        torch.save(optimizer.state_dict(), os.path.join(final_output_path,
+                                                        config.model_prefix + str(curr_iter) + '.state.pth'))
+
 
 if __name__ == '__main__':
     upsnet_train()

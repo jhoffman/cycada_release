@@ -24,17 +24,19 @@
 import math
 import numpy as np
 import cv2
+import PIL.Image as Image
 import pycocotools.mask as mask_util
 from upsnet.config.config import config
 from upsnet.bbox.bbox_transform import bbox_overlaps
+
 
 def get_gt_masks(gt_masks, size):
     num_mask = gt_masks.shape[0]
     processed_masks = np.zeros((num_mask, size[0], size[1]))
     for i in range(num_mask):
-        processed_masks[i,:,:] = cv2.resize(gt_masks[i].astype('float32'), (size[1], size[0]), interpolation=cv2.INTER_NEAREST)
+        processed_masks[i, :, :] = cv2.resize(gt_masks[i].astype(
+            'float32'), (size[1], size[0]), interpolation=cv2.INTER_NEAREST)
     return processed_masks
-
 
 
 def mask_overlap(box1, box2, mask1, mask2):
@@ -92,7 +94,7 @@ def intersect_box_mask(ex_box, gt_box, gt_mask):
     ex_starty = y1 - ex_box[1]
     ex_startx = x1 - ex_box[0]
 
-    inter_maskb = gt_mask[y1:y2+1 , x1:x2+1]
+    inter_maskb = gt_mask[y1:y2+1, x1:x2+1]
     regression_target = np.zeros((ex_box[3] - ex_box[1] + 1, ex_box[2] - ex_box[0] + 1))
     regression_target[ex_starty: ex_starty + h, ex_startx: ex_startx + w] = inter_maskb
 
@@ -219,6 +221,31 @@ def polys_to_mask_wrt_box(polygons, box, M):
     return mask
 
 
+def segms_to_mask_wrt_box(roidb, segms, box, M):
+    """Convert from the COCO polygon segmentation format to a binary mask
+    encoded as a 2D array of data type numpy.float32. The polygon segmentation
+    is understood to be enclosed in the given box and rasterized to an M x M
+    mask. The resulting mask is therefore of shape (M, M).
+    """
+    w = box[2] - box[0]
+    h = box[3] - box[1]
+
+    w = np.maximum(w, 1)
+    h = np.maximum(h, 1)
+
+    instances_img = np.array(Image.open(roidb['image'].replace('img', 'inst')))
+    img = np.zeros((instances_img.shape[0], instances_img.shape[1]), dtype='uint8')
+    img[(instances_img[:, :, 0] == segms[0]) &
+        (instances_img[:, :, 1] == segms[1]) &
+        (instances_img[:, :, 2] == segms[2])] = 1
+    img = img[box[1]:box[3], box[0]:box[2], :]
+
+    mask = cv2.resize(img, None, None, fx=M, fy=M, interpolation=cv2.INTER_NEAREST)
+    # Flatten in case polygons was a lists
+    mask = np.array(mask > 0, dtype=np.float32)
+    return mask
+
+
 def polys_to_boxes(polys):
     """Convert a list of polygons into an array of tight bounding boxes."""
     boxes_from_polys = np.zeros((len(polys), 4), dtype=np.float32)
@@ -232,6 +259,7 @@ def polys_to_boxes(polys):
 
     return boxes_from_polys
 
+
 def add_mask_rcnn_blobs(blobs, sampled_boxes, roidb, im_scale, batch_idx):
     """Add Mask R-CNN specific blobs to the input blob dictionary."""
     # Prepare the mask targets by associating one gt mask to each training roi
@@ -240,8 +268,9 @@ def add_mask_rcnn_blobs(blobs, sampled_boxes, roidb, im_scale, batch_idx):
     polys_gt_inds = np.where(
         (roidb['gt_classes'] > 0) & (roidb['is_crowd'] == 0)
     )[0]
-    polys_gt = [roidb['segms'][i] for i in polys_gt_inds]
-    boxes_from_polys = polys_to_boxes(polys_gt)
+    segms_gt = [roidb['segms'][i] for i in polys_gt_inds]
+    # a dirty hack to get bbox, not perfect!!
+    boxes_from_polys = [roidb['boxes'][i] for i in polys_gt_inds]
     fg_inds = np.where(blobs['labels_int32'] > 0)[0]
     roi_has_mask = blobs['labels_int32'].copy()
     roi_has_mask[roi_has_mask > 0] = 1
@@ -265,11 +294,11 @@ def add_mask_rcnn_blobs(blobs, sampled_boxes, roidb, im_scale, batch_idx):
         # add fg targets
         for i in range(rois_fg.shape[0]):
             fg_polys_ind = fg_polys_inds[i]
-            poly_gt = polys_gt[fg_polys_ind]
+            segm_gt = segms_gt[fg_polys_ind]
             roi_fg = rois_fg[i]
             # Rasterize the portion of the polygon mask within the given fg roi
             # to an M x M binary image
-            mask = polys_to_mask_wrt_box(poly_gt, roi_fg, M)
+            mask = segms_to_mask_wrt_box(roidb, segm_gt, roi_fg, M)
             mask = np.array(mask > 0, dtype=np.int32)  # Ensure it's binary
             masks[i, :] = np.reshape(mask, M**2)
     else:  # If there are no fg masks (it does happen)

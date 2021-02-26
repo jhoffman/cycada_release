@@ -5,35 +5,39 @@
 #
 # Licensed under the Uber Non-Commercial License (the "License");
 # you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at the root directory of this project. 
+# You may obtain a copy of the License at the root directory of this project.
 #
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# 
+#
 # Written by Yuwen Xiong
 # ---------------------------------------------------------------------------
 
 from __future__ import print_function
 
+import gzip
+import json
 import os
+import pickle
 import sys
+from collections import Sequence, defaultdict
+
+import cv2
+import numpy as np
+import pycocotools.mask as mask_util
 import torch
 import torch.utils.data
-
-import pickle, gzip
-import numpy as np
-import cv2
-import json
-from PIL import Image, ImageDraw
-from collections import defaultdict, Sequence
-
-from upsnet.config.config import config
-from upsnet.dataset.json_gta5_dataset import JsonGTA5Dataset, extend_with_flipped_entries, filter_for_training, add_bbox_regression_targets
-from upsnet.dataset.base_dataset import BaseDataset
-from upsnet.rpn.assign_anchor import add_rpn_blobs
-from upsnet.bbox.sample_rois import sample_rois
 from lib.utils.logging import logger
-import pycocotools.mask as mask_util
+from PIL import Image, ImageDraw
+from upsnet.bbox.sample_rois import sample_rois
+from upsnet.config.config import config
+from upsnet.dataset.base_dataset import BaseDataset
+from upsnet.dataset.json_gta5_dataset import (JsonGTA5Dataset,
+                                              add_bbox_regression_targets,
+                                              extend_with_flipped_entries,
+                                              filter_for_training)
+from upsnet.rpn.assign_anchor import add_rpn_blobs
+
 
 class GTA5(BaseDataset):
 
@@ -56,7 +60,7 @@ class GTA5(BaseDataset):
 
         self.flip = flip
         self.result_path = result_path
-        self.num_classes = 11 # num of instance classes + 1
+        self.num_classes = 11  # num of instance classes + 1
         self.phase = phase
         self.image_sets = image_sets
 
@@ -75,9 +79,10 @@ class GTA5(BaseDataset):
             roidbs = []
             for image_set, proposal_file in zip(image_sets, proposal_files):
                 dataset = JsonGTA5Dataset('gta5_' + image_set,
-                                      image_dir=self.image_dirs[image_set],
-                                      anno_file=self.anno_files[image_set])
-                roidb = dataset.get_roidb(gt=True, proposal_file=proposal_file, crowd_filter_thresh=config.train.crowd_filter_thresh)
+                                          image_dir=self.image_dirs[image_set],
+                                          anno_file=self.anno_files[image_set])
+                roidb = dataset.get_roidb(gt=True, proposal_file=proposal_file,
+                                          crowd_filter_thresh=config.train.crowd_filter_thresh)
                 if flip:
                     if logger:
                         logger.info('Appending horizontally-flipped training examples...')
@@ -92,8 +97,8 @@ class GTA5(BaseDataset):
         else:
             assert len(image_sets) == 1
             self.dataset = JsonGTA5Dataset('gta5_' + image_sets[0],
-                                       image_dir=self.image_dirs[image_sets[0]],
-                                       anno_file=self.anno_files[image_sets[0]])
+                                           image_dir=self.image_dirs[image_sets[0]],
+                                           anno_file=self.anno_files[image_sets[0]])
             roidb = self.dataset.get_roidb(gt=True, proposal_file=proposal_files[0],
                                            crowd_filter_thresh=config.train.crowd_filter_thresh if phase != 'test' else 0)
             if flip:
@@ -129,7 +134,7 @@ class GTA5(BaseDataset):
                 data = {'data': im_blob,
                         'im_info': np.array([[im_blob.shape[-2],
                                               im_blob.shape[-1],
-                                             im_scales[0]]], np.float32),
+                                              im_scales[0]]], np.float32),
                         }
                 label = {'roidb': self.roidb[index]}
         else:
@@ -139,7 +144,7 @@ class GTA5(BaseDataset):
                 data = {'data': im_blob,
                         'im_info': np.array([[im_blob.shape[-2],
                                               im_blob.shape[-1],
-                                             im_scales[0]]], np.float32)}
+                                              im_scales[0]]], np.float32)}
                 label = {'rois': frcn_blob['rois'].astype(np.float32),
                          'cls_label': frcn_blob['labels_int32'].astype(np.int64),
                          'bbox_target': frcn_blob['bbox_targets'].astype(np.float32),
@@ -157,28 +162,35 @@ class GTA5(BaseDataset):
                 label = None
         if config.network.has_fcn_head:
             if self.phase != 'test':
-                seg_gt = np.array(Image.open(self.roidb[index]['image'].replace('images', 'labels').replace('leftImg8bit.png', 'gtFine_labelTrainIds.png')))
+                seg_gt = np.array(Image.open(self.roidb[index]['image'].replace('img', 'lblcls')))
                 if self.roidb[index]['flipped']:
                     seg_gt = np.fliplr(seg_gt)
-                seg_gt = cv2.resize(seg_gt, None, None, fx=im_scales[0], fy=im_scales[0], interpolation=cv2.INTER_NEAREST)
+                seg_gt = cv2.resize(seg_gt, None, None, fx=im_scales[0],
+                                    fy=im_scales[0], interpolation=cv2.INTER_NEAREST)
                 label.update({'seg_gt': seg_gt})
                 label.update({'gt_classes': label['roidb']['gt_classes']})
                 label.update({'mask_gt': np.zeros((len(label['gt_classes']), im_blob.shape[-2], im_blob.shape[-1]))})
                 for i in range(len(label['gt_classes'])):
-                    img = Image.new('L', (int(im_blob.shape[-1] / im_scales[0]), int(im_blob.shape[-2] / im_scales[0])), 0)
-                    for j in range(len(label['roidb']['segms'][i])):
-                        ImageDraw.Draw(img).polygon(tuple(label['roidb']['segms'][i][j]), outline=1, fill=1)
-                    label['mask_gt'][i] = cv2.resize(np.array(img), None, None, fx=im_scales[0], fy=im_scales[0], interpolation=cv2.INTER_NEAREST)
+                    img = np.zeros((int(im_blob.shape[-2] / im_scales[0]),
+                                    int(im_blob.shape[-1] / im_scales[0])), dtype='uint8')
+                    instances_img = np.array(Image.open(label['roidb']['image'].replace('img', 'inst')))
+                    img[(instances_img[:, :, 0] == label['roidb']['segms'][i][0]) &
+                        (instances_img[:, :, 1] == label['roidb']['segms'][i][1]) &
+                        (instances_img[:, :, 2] == label['roidb']['segms'][i][2])] = 1
+                    label['mask_gt'][i] = cv2.resize(img, None, None, fx=im_scales[0],
+                                                     fy=im_scales[0], interpolation=cv2.INTER_NEAREST)
                 if config.train.fcn_with_roi_loss:
                     gt_boxes = label['roidb']['boxes'][np.where(label['roidb']['gt_classes'] > 0)[0]]
                     gt_boxes = np.around(gt_boxes * im_scales[0]).astype(np.int32)
-                    label.update({'seg_roi_gt': np.zeros((len(gt_boxes), config.network.mask_size, config.network.mask_size), dtype=np.int64)})
+                    label.update({'seg_roi_gt': np.zeros(
+                        (len(gt_boxes), config.network.mask_size, config.network.mask_size), dtype=np.int64)})
                     for i in range(len(gt_boxes)):
                         if gt_boxes[i][3] == gt_boxes[i][1]:
                             gt_boxes[i][3] += 1
                         if gt_boxes[i][2] == gt_boxes[i][0]:
                             gt_boxes[i][2] += 1
-                        label['seg_roi_gt'][i] = cv2.resize(seg_gt[gt_boxes[i][1]:gt_boxes[i][3], gt_boxes[i][0]:gt_boxes[i][2]], (config.network.mask_size, config.network.mask_size), interpolation=cv2.INTER_NEAREST)
+                        label['seg_roi_gt'][i] = cv2.resize(seg_gt[gt_boxes[i][1]:gt_boxes[i][3], gt_boxes[i][0]:gt_boxes[i][2]], (
+                            config.network.mask_size, config.network.mask_size), interpolation=cv2.INTER_NEAREST)
             else:
                 pass
 
@@ -236,10 +248,11 @@ class GTA5(BaseDataset):
         """
         import matplotlib
         matplotlib.use('Agg')
+        import random
+
+        import cv2
         import matplotlib.pyplot as plt
         from matplotlib.patches import Polygon
-        import random
-        import cv2
         palette = {
             'person': (220, 20, 60),
             'rider': (255, 0, 0),
@@ -333,7 +346,8 @@ class GTA5(BaseDataset):
             if save_path is None:
                 plt.show()
             else:
-                fig.savefig(os.path.join(save_path, '{}.png'.format(self.roidb[i]['image'].split('/')[-1][:-16])), dpi=200)
+                fig.savefig(os.path.join(save_path, '{}.png'.format(
+                    self.roidb[i]['image'].split('/')[-1][:-16])), dpi=200)
             plt.close('all')
 
     def evaluate_masks(
@@ -348,13 +362,14 @@ class GTA5(BaseDataset):
 
         os.environ['CITYSCAPES_DATASET'] = os.path.join(os.path.dirname(__file__), '../../data/cityscapes')
         os.environ['CITYSCAPES_RESULTS'] = os.path.join(output_dir, 'inst_seg')
-        sys.path.insert(0, os.path.join(os.path.abspath(os.path.dirname(__file__)), '..', '..', 'lib', 'dataset_devkit', 'cityscapesScripts'))
-        sys.path.insert(0, os.path.join(os.path.abspath(os.path.dirname(__file__)), '..', '..', 'lib', 'dataset_devkit', 'cityscapesScripts', 'cityscapesscripts', 'evaluation'))
+        sys.path.insert(0, os.path.join(os.path.abspath(os.path.dirname(__file__)),
+                                        '..', '..', 'lib', 'dataset_devkit', 'cityscapesScripts'))
+        sys.path.insert(0, os.path.join(os.path.abspath(os.path.dirname(__file__)), '..', '..', 'lib',
+                                        'dataset_devkit', 'cityscapesScripts', 'cityscapesscripts', 'evaluation'))
 
         # Load the Cityscapes eval script *after* setting the required env vars,
         # since the script reads their values into global variables (at load time).
-        import cityscapesscripts.evaluation.evalInstanceLevelSemanticLabeling \
-            as cityscapes_eval
+        import cityscapesscripts.evaluation.evalInstanceLevelSemanticLabeling as cityscapes_eval
         sys.argv = []
 
         roidb = self.dataset.get_roidb()
@@ -393,13 +408,13 @@ class GTA5(BaseDataset):
         pallete_raw = np.zeros((256, 3)).astype('uint8')
         pallete = np.zeros((256, 3)).astype('uint8')
 
-        pallete_raw[5, :] =  [111,  74,   0]
-        pallete_raw[6, :] =  [ 81,   0,  81]
-        pallete_raw[7, :] =  [128,  64, 128]
-        pallete_raw[8, :] =  [244,  35, 232]
-        pallete_raw[9, :] =  [250, 170, 160]
+        pallete_raw[5, :] = [111,  74,   0]
+        pallete_raw[6, :] = [81,   0,  81]
+        pallete_raw[7, :] = [128,  64, 128]
+        pallete_raw[8, :] = [244,  35, 232]
+        pallete_raw[9, :] = [250, 170, 160]
         pallete_raw[10, :] = [230, 150, 140]
-        pallete_raw[11, :] = [ 70,  70,  70]
+        pallete_raw[11, :] = [70,  70,  70]
         pallete_raw[12, :] = [102, 102, 156]
         pallete_raw[13, :] = [190, 153, 153]
         pallete_raw[14, :] = [180, 165, 180]
@@ -411,16 +426,16 @@ class GTA5(BaseDataset):
         pallete_raw[20, :] = [220, 220,   0]
         pallete_raw[21, :] = [107, 142,  35]
         pallete_raw[22, :] = [152, 251, 152]
-        pallete_raw[23, :] = [ 70, 130, 180]
+        pallete_raw[23, :] = [70, 130, 180]
         pallete_raw[24, :] = [220,  20,  60]
         pallete_raw[25, :] = [255,   0,   0]
-        pallete_raw[26, :] = [  0,   0, 142]
-        pallete_raw[27, :] = [  0,   0,  70]
-        pallete_raw[28, :] = [  0,  60, 100]
-        pallete_raw[29, :] = [  0,   0,  90]
-        pallete_raw[30, :] = [  0,   0, 110]
-        pallete_raw[31, :] = [  0,  80, 100]
-        pallete_raw[32, :] = [  0,   0, 230]
+        pallete_raw[26, :] = [0,   0, 142]
+        pallete_raw[27, :] = [0,   0,  70]
+        pallete_raw[28, :] = [0,  60, 100]
+        pallete_raw[29, :] = [0,   0,  90]
+        pallete_raw[30, :] = [0,   0, 110]
+        pallete_raw[31, :] = [0,  80, 100]
+        pallete_raw[32, :] = [0,   0, 230]
         pallete_raw[33, :] = [119,  11,  32]
 
         train2regular = [7, 8, 11, 12, 13, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 31, 32, 33]
@@ -433,16 +448,17 @@ class GTA5(BaseDataset):
         # return pallete_raw
         return pallete
 
-
     def evaluate_ssegs(self, pred_segmentations, res_file_folder):
         self.write_segmentation_result(pred_segmentations, res_file_folder)
 
         confusion_matrix = np.zeros((config.dataset.num_seg_classes, config.dataset.num_seg_classes))
         for i, roidb in enumerate(self.roidb):
 
-            seg_gt = np.array(Image.open(roidb['image'].replace('images', 'labels').replace('leftImg8bit.png', 'gtFine_labelTrainIds.png'))).astype('float32')
+            seg_gt = np.array(Image.open(roidb['image'].replace('images', 'labels').replace(
+                'leftImg8bit.png', 'gtFine_labelTrainIds.png'))).astype('float32')
 
-            seg_pathes = os.path.split(roidb['image'].replace('images', 'labels').replace('leftImg8bit.png', 'gtFine_labelTrainIds.png'))
+            seg_pathes = os.path.split(roidb['image'].replace('images', 'labels').replace(
+                'leftImg8bit.png', 'gtFine_labelTrainIds.png'))
             res_image_name = seg_pathes[-1][:-len('_gtFine_labelTrainIds.png')]
             res_save_path = os.path.join(res_file_folder, res_image_name + '.png')
 
@@ -462,7 +478,7 @@ class GTA5(BaseDataset):
         IU_array = (tp / np.maximum(1.0, pos + res - tp))
         mean_IU = IU_array.mean()
 
-        evaluation_results = {'meanIU':mean_IU, 'IU_array':IU_array, 'confusion_matrix': confusion_matrix}
+        evaluation_results = {'meanIU': mean_IU, 'IU_array': IU_array, 'confusion_matrix': confusion_matrix}
 
         def convert_confusion_matrix(confusion_matrix):
             cls_sum = confusion_matrix.sum(axis=1)
@@ -504,4 +520,3 @@ class GTA5(BaseDataset):
             segmentation_result = Image.fromarray(segmentation_result)
             segmentation_result.putpalette(pallete)
             segmentation_result.save(res_save_path)
-

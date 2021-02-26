@@ -27,33 +27,30 @@ the COCO json format and use the existing code; it is not recommended to write
 code to support new dataset formats.
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
 
 import copy
-import pickle
-import numpy as np
 import os
+import pickle
+
+import matplotlib
+import numpy as np
 import scipy.sparse
+import upsnet.bbox.bbox_transform as box_utils
+import upsnet.mask.mask_transform as segm_utils
+from lib.utils.logging import logger
+from lib.utils.timer import Timer
+from pycocotools import mask as COCOmask
+from pycocotools.coco import COCO
+from upsnet.config.config import config
 
 # Must happen before importing COCO API (which imports matplotlib)
 """Set matplotlib up."""
-import matplotlib
 # Use a non-interactive backend
 matplotlib.use('Agg')
 # COCO API
-from pycocotools import mask as COCOmask
-from pycocotools.coco import COCO
 
-from upsnet.config.config import config
-
-from lib.utils.timer import Timer
-import upsnet.bbox.bbox_transform as box_utils
-import upsnet.mask.mask_transform as segm_utils
-
-from lib.utils.logging import logger
 
 class JsonGTA5Dataset(object):
     """A class representing a COCO json dataset."""
@@ -171,12 +168,6 @@ class JsonGTA5Dataset(object):
         width = entry['width']
         height = entry['height']
         for obj in objs:
-            # crowd regions are RLE encoded and stored as dicts
-            if isinstance(obj['segmentation'], list):
-                # Valid polygons have >= 3 points, so require >= 6 coordinates
-                obj['segmentation'] = [
-                    p for p in obj['segmentation'] if len(p) >= 6
-                ]
             # if obj['area'] < cfg.TRAIN.GT_MIN_AREA:
             if obj['area'] < config.train.gt_min_area:
                 continue
@@ -191,7 +182,7 @@ class JsonGTA5Dataset(object):
             if obj['area'] > 0 and x2 > x1 and y2 > y1:
                 obj['clean_bbox'] = [x1, y1, x2, y2]
                 valid_objs.append(obj)
-                valid_segms.append(obj['segmentation'])
+                valid_segms.append(obj['segmentation_color'])
         num_valid_objs = len(valid_objs)
 
         boxes = np.zeros((num_valid_objs, 4), dtype=entry['boxes'].dtype)
@@ -407,7 +398,7 @@ def filter_for_training(roidb):
     num_after = len(filtered_roidb)
     if logger:
         logger.info('Filtered {} roidb entries: {} -> {}'.
-               format(num - num_after, num, num_after))
+                    format(num - num_after, num, num_after))
     return filtered_roidb
 
 
