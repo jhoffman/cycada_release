@@ -4,8 +4,8 @@ model_prefix: "upsnet_resnet_50_gta5_"
 symbol: resnet_50_upsnet
 gpus: '0'
 dataset:
-  num_classes: 9
-  num_seg_classes: 19
+  num_classes: 11
+  num_seg_classes: 23
   dataset: GTA5
   dataset_path: "./data/gta5/"
   image_set: train
