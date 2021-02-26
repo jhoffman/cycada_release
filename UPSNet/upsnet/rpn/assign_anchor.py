@@ -12,7 +12,7 @@
 # and
 # --------------------------------------------------------
 # mx-maskrcnn
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -27,7 +27,6 @@
 # --------------------------------------------------------
 
 
-
 import numpy as np
 import numpy.random as npr
 from .generate_anchors import generate_anchors
@@ -37,6 +36,7 @@ from upsnet.bbox.bbox_transform import bbox_transform, bbox_overlaps
 from upsnet.rpn.generate_anchors import get_field_of_anchors, compute_targets, unmap
 from upsnet.bbox.bbox_transform import bbox_overlaps
 import pickle
+
 
 def assign_anchor(feat_shape, gt_boxes, im_info, feat_stride=16,
                   scales=(8, 16, 32), ratios=(0.5, 1, 2), allowed_border=0):
@@ -168,7 +168,7 @@ def assign_anchor(feat_shape, gt_boxes, im_info, feat_stride=16,
 
 
 def assign_pyramid_anchor(gt_boxes, im_info, feat_strides=(64, 32, 16, 8, 4),
-                            scales=(8,), ratios=(0.5, 1, 2), allowed_border=0):
+                          scales=(8,), ratios=(0.5, 1, 2), allowed_border=0):
     """
     assign ground truth boxes to anchor positions
     :param feat_shape: infer output shape
@@ -360,11 +360,10 @@ def assign_pyramid_anchor(gt_boxes, im_info, feat_strides=(64, 32, 16, 8, 4),
     bbox_target_concat = np.concatenate(bbox_target_list, axis=2)
     bbox_weight_concat = np.concatenate(bbox_weight_list, axis=2)
 
-    label= {'label': label_concat,
-            'bbox_target': bbox_target_concat,
-            'bbox_weight': bbox_weight_concat}
+    label = {'label': label_concat,
+             'bbox_target': bbox_target_concat,
+             'bbox_weight': bbox_weight_concat}
     return label
-
 
 
 def add_rpn_blobs(blobs, im_scales, roidb):
@@ -382,7 +381,8 @@ def add_rpn_blobs(blobs, im_scales, roidb):
         all_anchors = np.concatenate([f.field_of_anchors for f in foas])
     else:
         foa = get_field_of_anchors(
-            config.network.rpn_feat_stride, np.array(config.network.anchor_scales) * config.network.rpn_feat_stride, config.network.anchor_ratios
+            config.network.rpn_feat_stride, np.array(
+                config.network.anchor_scales) * config.network.rpn_feat_stride, config.network.anchor_ratios
         )
         all_anchors = foa.field_of_anchors
 
@@ -432,7 +432,7 @@ def add_rpn_blobs(blobs, im_scales, roidb):
     # ]
     valid_keys = [
         'boxes', 'segms', 'seg_areas', 'gt_classes',
-        'gt_overlaps', 'is_crowd', 'box_to_gt_ind_map'
+        'gt_overlaps', 'is_crowd', 'box_to_gt_ind_map', 'image'
     ]
     minimal_roidb = [{} for _ in range(len(roidb))]
     for i, e in enumerate(roidb):
@@ -443,6 +443,7 @@ def add_rpn_blobs(blobs, im_scales, roidb):
 
     # Always return valid=True, since RPN minibatches are valid by design
     return True
+
 
 def _get_rpn_blobs(im_height, im_width, foas, all_anchors, gt_boxes):
     total_anchors = all_anchors.shape[0]
@@ -496,7 +497,6 @@ def _get_rpn_blobs(im_height, im_width, foas, all_anchors, gt_boxes):
         labels[anchors_with_max_overlap] = 1
         # Fg label: above threshold IOU
         labels[anchor_to_gt_max >= config.train.rpn_positive_overlap] = 1
-
 
     # subsample positive labels if we have too many
     num_fg = int(config.train.rpn_fg_fraction * config.train.rpn_batch_size)

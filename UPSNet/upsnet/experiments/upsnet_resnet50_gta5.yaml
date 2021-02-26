@@ -48,6 +48,7 @@ train:
   wd: 0.0001
   momentum: 0.9
   batch_size: 1
+  flip: false
 
   fcn_loss_weight: 1
   fcn_with_roi_loss: false

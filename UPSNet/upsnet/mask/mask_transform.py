@@ -233,14 +233,14 @@ def segms_to_mask_wrt_box(roidb, segms, box, M):
     w = np.maximum(w, 1)
     h = np.maximum(h, 1)
 
-    instances_img = np.array(Image.open(roidb['image'].replace('img', 'inst')))
+    instances_img = np.array(Image.open(roidb['image'].replace('img', 'inst').replace('jpg', 'png')))
     img = np.zeros((instances_img.shape[0], instances_img.shape[1]), dtype='uint8')
     img[(instances_img[:, :, 0] == segms[0]) &
         (instances_img[:, :, 1] == segms[1]) &
         (instances_img[:, :, 2] == segms[2])] = 1
     img = img[box[1]:box[3], box[0]:box[2], :]
 
-    mask = cv2.resize(img, None, None, fx=M, fy=M, interpolation=cv2.INTER_NEAREST)
+    mask = cv2.resize(img, (M, M), interpolation=cv2.INTER_NEAREST)
     # Flatten in case polygons was a lists
     mask = np.array(mask > 0, dtype=np.float32)
     return mask

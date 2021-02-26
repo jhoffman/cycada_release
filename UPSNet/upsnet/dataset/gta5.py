@@ -162,7 +162,7 @@ class GTA5(BaseDataset):
                 label = None
         if config.network.has_fcn_head:
             if self.phase != 'test':
-                seg_gt = np.array(Image.open(self.roidb[index]['image'].replace('img', 'lblcls')))
+                seg_gt = np.array(Image.open(self.roidb[index]['image'].replace('img', 'lblcls').replace('jpg', 'png')))
                 if self.roidb[index]['flipped']:
                     seg_gt = np.fliplr(seg_gt)
                 seg_gt = cv2.resize(seg_gt, None, None, fx=im_scales[0],
@@ -171,14 +171,15 @@ class GTA5(BaseDataset):
                 label.update({'gt_classes': label['roidb']['gt_classes']})
                 label.update({'mask_gt': np.zeros((len(label['gt_classes']), im_blob.shape[-2], im_blob.shape[-1]))})
                 for i in range(len(label['gt_classes'])):
-                    img = np.zeros((int(im_blob.shape[-2] / im_scales[0]),
-                                    int(im_blob.shape[-1] / im_scales[0])), dtype='uint8')
-                    instances_img = np.array(Image.open(label['roidb']['image'].replace('img', 'inst')))
+                    img = np.zeros((im_blob.shape[-2], im_blob.shape[-1]), dtype='uint8')
+                    instances_img = np.array(Image.open(
+                        self.roidb[index]['image'].replace('img', 'inst').replace('jpg', 'png')))
+                    instances_img = cv2.resize(
+                        instances_img, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
                     img[(instances_img[:, :, 0] == label['roidb']['segms'][i][0]) &
                         (instances_img[:, :, 1] == label['roidb']['segms'][i][1]) &
                         (instances_img[:, :, 2] == label['roidb']['segms'][i][2])] = 1
-                    label['mask_gt'][i] = cv2.resize(img, None, None, fx=im_scales[0],
-                                                     fy=im_scales[0], interpolation=cv2.INTER_NEAREST)
+                    label['mask_gt'][i] = img
                 if config.train.fcn_with_roi_loss:
                     gt_boxes = label['roidb']['boxes'][np.where(label['roidb']['gt_classes'] > 0)[0]]
                     gt_boxes = np.around(gt_boxes * im_scales[0]).astype(np.int32)

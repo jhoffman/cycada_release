@@ -109,8 +109,7 @@ def generate_bbox(classes, images_info, split='train'):
     categories = []
     used_classes = set()
     for index, image_info in enumerate(images_info):
-        inst_file = image_info['file_name'].replace(
-            'img', 'inst').replace('jpg', 'png')
+        inst_file = image_info['file_name'].replace('img', 'inst').replace('jpg', 'png')
         inst_img = imread(inst_file)
         for i in range(256 * (np.max(inst_img[:, :, 1]) + 1)):
             g = i // 256
@@ -153,6 +152,7 @@ def generate_bbox(classes, images_info, split='train'):
 
     with open(f'data/gta5/{split}/inst.json', 'w', encoding='utf-8') as f:
         json.dump(json_obj, f)
+
 
 # generate labeled images (for sematic segmentation)
 # generate_labeled_images(get_classes())
