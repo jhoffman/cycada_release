@@ -238,7 +238,7 @@ def segms_to_mask_wrt_box(roidb, segms, box, M):
     img[(instances_img[:, :, 0] == segms[0]) &
         (instances_img[:, :, 1] == segms[1]) &
         (instances_img[:, :, 2] == segms[2])] = 1
-    img = img[box[1]:box[3], box[0]:box[2], :]
+    img = img[int(box[1]):int(box[3]), int(box[0]):int(box[2])]
 
     mask = cv2.resize(img, (M, M), interpolation=cv2.INTER_NEAREST)
     # Flatten in case polygons was a lists
@@ -270,7 +270,7 @@ def add_mask_rcnn_blobs(blobs, sampled_boxes, roidb, im_scale, batch_idx):
     )[0]
     segms_gt = [roidb['segms'][i] for i in polys_gt_inds]
     # a dirty hack to get bbox, not perfect!!
-    boxes_from_polys = [roidb['boxes'][i] for i in polys_gt_inds]
+    boxes_from_polys = np.array([roidb['boxes'][i] for i in polys_gt_inds])
     fg_inds = np.where(blobs['labels_int32'] > 0)[0]
     roi_has_mask = blobs['labels_int32'].copy()
     roi_has_mask[roi_has_mask > 0] = 1
