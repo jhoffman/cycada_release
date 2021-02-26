@@ -146,9 +146,9 @@ def generate_bbox(classes, images_info, split='train'):
         })
 
     json_obj = {
-        'image': images_info,
+        'images': images_info,
         'categories': categories,
-        'annotation': annotations
+        'annotations': annotations
     }
 
     with open(f'data/gta5/{split}/inst.json', 'w', encoding='utf-8') as f:
