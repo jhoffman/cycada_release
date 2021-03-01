@@ -28,20 +28,20 @@ tgt='cityscapes'
 datadir='/x/'
 
 
-resdir="results/${src}_to_${tgt}/adda_sgd/${weight_share}_nolsgan_${discrim}"
+resdir="results/${src}_to_${tgt}/adda_ups_sgd/${weight_share}_nolsgan_${discrim}"
 
 # init with pre-trained cyclegta5 model
-model='drn26'
+model='ups'
 baseiter=115000
 #model='fcn8s'
 #baseiter=100000
 
 
-base_model="base_models/${model}-${src}-iter${baseiter}.pth"
+# base_model="base_models/${model}-${src}-iter${baseiter}.pth"
 outdir="${resdir}/${model}/lr${lr}_crop${crop}_ld${lambda_d}_lg${lambda_g}_momentum${momentum}"
 
 # Run python script #
-CUDA_VISIBLE_DEVICES=${gpu} python scripts/train_fcn_adda.py \
+CUDA_VISIBLE_DEVICES=${gpu} python scripts/train_ups_adda.py \
     ${outdir} \
     --dataset ${src} --dataset ${tgt} --datadir ${datadir} \
     --lr ${lr} --momentum ${momentum} --gpu 0 \
