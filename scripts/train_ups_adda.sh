@@ -25,7 +25,7 @@ discrim='discrim_score'
 ########
 src='cyclegta5'
 tgt='cityscapes'
-datadir='/x/'
+datadir='./../data/'
 
 
 resdir="results/${src}_to_${tgt}/adda_ups_sgd/${weight_share}_nolsgan_${discrim}"
