@@ -9,7 +9,7 @@ from torch.utils import model_zoo
 from torchvision.models import vgg
 
 from cycada.models.models import register_model
-from upsnet.models import *
+from upsnet.models.resnet_upsnet import resnet_upsnet
 
 # @register_model('fcn8s')
 # class VGG16_FCN8s(nn.Module):
@@ -128,12 +128,13 @@ from upsnet.models import *
 #             vgg_head_param.data = v.view(vgg_head_param.size())
 
 @register_model('upsnet')
-class UPSNET():
+class UPSNET(resnet_upsnet):
 
-    def __init__(self):
-        print("Hello! I am the initial guy")
-        pass
+    # def __init__(self):
+        # print("Hello! I am the initial guy")
+        # pass
+    pass
 
 if __name__ == '__main__':
 
-    model = UPSNET()
+    model = UPSNET([3, 4, 23, 3])

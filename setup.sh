@@ -8,4 +8,5 @@ export PYTHONPATH="/home/vkonduru/domain/cycada/UPSNet/:/home/vkonduru/domain/cy
 pip install -r requirements.txt
 
 # UPSNET
-./UPSNet/init.sh
+cd UPSNet
+./init.sh
