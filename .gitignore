@@ -2,3 +2,8 @@ __pycache__/
 cycada/*/__pycache__/
 scripts/.ipynb_checkpoints/
 cyclegan_old
+data/
+logs/
+results/
+base_models/
+runs/

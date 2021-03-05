@@ -14,7 +14,8 @@ np.random.seed(4325)
 ###################################
 # Set to your preferred data path #
 ###################################
-datadir = '/x/jhoffman'
+# datadir = '/x/jhoffman'
+datadir = 'data'
 ###################################
 
 # Choose GPU ID
